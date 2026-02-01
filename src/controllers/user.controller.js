@@ -1,5 +1,77 @@
 const User = require('../models/User');
 const { createAuditLog } = require('../services/auditService');
+const bcrypt = require('bcryptjs');
+
+exports.createUser = async (req, res, next) => {
+  try {
+    const { name, email, password, role } = req.body;
+
+    // Validation
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        error: 'Name, email, password, and role are required'
+      });
+    }
+
+    if (!['admin', 'analyst', 'viewer'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid role. Must be admin, analyst, or viewer'
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'User with this email already exists'
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = new User({
+      name,
+      email,
+      password: hashedPassword,
+      role,
+      isActive: true
+    });
+
+    await user.save();
+
+    // Audit log
+    await createAuditLog({
+      action: 'CREATE',
+      entity: 'USER',
+      entityId: user._id,
+      userId: req.user.id,
+      changes: {
+        newValue: { name, email, role }
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isActive: user.isActive,
+          createdAt: user.createdAt
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 exports.getUsers = async (req, res, next) => {
   try {
